@@ -8,3 +8,4 @@ import Std
 -- def hello := "world"
 
 #eval f ()
+#eval g ()
