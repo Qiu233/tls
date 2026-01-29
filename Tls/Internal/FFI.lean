@@ -8,19 +8,14 @@ private opaque initialize_native : IO Unit
 
 initialize initialize_native
 
-public section
-
-namespace Tls.FFI
-
--- @[extern "lean_f"]
--- public opaque f : Unit → Int32
+namespace Tls.Internal.FFI
 
 public declare_ffi_type% SSLMethod : Type
 public declare_ffi_type% SSLContext : Type
 public declare_ffi_type% BIO : Type
 
 @[extern "ssl_tls_method"]
-public opaque SSLMethod.TLS : IO SSLMethod
+public opaque SSLMethod.TLS : BaseIO SSLMethod
 
 @[extern "ssl_ssl_ctx_new"]
 public opaque SSLContext.new : @& SSLMethod → IO SSLContext
@@ -37,8 +32,19 @@ public opaque BIO.ofStream : Stream -> IO BIO
 @[extern "ssl_errors"]
 public opaque errors : BaseIO (Array String)
 
+-- there is a lifetime issue with a pair
+-- it remains to see whether one half (asymmetrically) should keep the other alive
 @[extern "bio_new_pair"]
-public opaque BIO.mkPair : IO (BIO × BIO)
+private opaque BIO.mkPair : IO (BIO × BIO)
+
+@[extern "bio_mem"]
+public opaque BIO.mkMem : IO BIO
+
+@[extern "bio_buffer"]
+public opaque BIO.mkBuffer : IO BIO
+
+@[extern "bio_base64"]
+public opaque BIO.mkBase64 : IO BIO
 
 @[extern "bio_push"]
 public opaque BIO.push : BIO -> BIO -> BaseIO BIO
@@ -67,29 +73,11 @@ public opaque BIO.shouldRead : @& BIO -> BaseIO Bool
 @[extern "error_to_io_user_error"]
 public opaque BIO.getAllError : BaseIO IO.Error
 
+@[extern "ssl_ctx_load_verify_file"]
+public opaque SSLContext.load_verify_file : @& SSLContext -> String -> IO Unit
 
+@[extern "bio_handshake"]
+public opaque BIO.handshake : @& BIO -> IO Unit
 
-
-
-#exit
-
-
-#check BaseIO
-#check  BaseIO (Std.Internal.IO.Async.MaybeTask Nat)
-
-def M : Type → Type := fun T => BaseIO (Std.Internal.IO.Async.MaybeTask (Except IO.Error T))
-
-#check Task
-#check BaseIO.asTask
-#check IO.Promise
-#check Std.Internal.IO.Async.Async.race
-#check Task.bind
-#check Std.Internal.IO.Async.Async
-#check BaseIO.bindTask
-
-@[extern "test"]
-public opaque test : BaseIO ByteArray → ByteArray
-#check Except
-#check Task
-#check IO.getTaskState
-#check IO
+@[extern "bio_ssl_shutdown"]
+public opaque BIO.ssl_shutdown : @& BIO -> BaseIO Unit
