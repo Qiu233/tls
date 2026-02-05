@@ -122,7 +122,8 @@ partial def BIO.readAsync? (bio : BIO) (max : USize) : Async (Option ByteArray) 
   | ERR_RETRY_READ => -- EAGAIN
     sleep 1
     BIO.readAsync? bio max
-  | err => throw err
+  | err@(ERR_RETRY _) => throw err
+  | _ => return none -- closed
 
 partial def BIO.handshakeAsync (bio : BIO) : Async Unit := do
   try
