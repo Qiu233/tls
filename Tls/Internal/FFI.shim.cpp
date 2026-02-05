@@ -499,13 +499,13 @@ lean_obj_res handle_retry_error(BIO * bio) {
     return lean_io_result_mk_error(lean_mk_io_user_error(err));
   }
   if (BIO_should_read(bio)) {
-    return lean_io_result_mk_error(lean_mk_io_error_resource_exhausted(EAGAIN, lean_mk_string("READ")));
+    return lean_io_result_mk_error(lean_mk_io_error_resource_exhausted(EAGAIN, lean_mk_string("SHOULD_READ")));
   }
   if (BIO_should_write(bio)) {
-    return lean_io_result_mk_error(lean_mk_io_error_resource_exhausted(EAGAIN, lean_mk_string("WRITE")));
+    return lean_io_result_mk_error(lean_mk_io_error_resource_exhausted(EAGAIN, lean_mk_string("SHOULD_WRITE")));
   }
   if (BIO_should_io_special(bio)) {
-    return lean_io_result_mk_error(lean_mk_io_error_resource_exhausted(EAGAIN, lean_mk_string("IO_SPECIAL")));
+    return lean_io_result_mk_error(lean_mk_io_error_resource_exhausted(EAGAIN, lean_mk_string("SHOULD_IO_SPECIAL")));
   }
   lean_panic("handle_retry_error: BIO_should_retry returns true with no retry flag set.", true);
   return lean_io_result_mk_error(lean_mk_io_user_error(lean_mk_string("handle_retry_error: BIO_should_retry returns true with no retry flag set.")));
@@ -572,6 +572,13 @@ extern "C" uint8_t bio_should_write(b_lean_obj_arg bio) {
 extern "C" uint8_t bio_should_read(b_lean_obj_arg bio) {
   auto bio_ = unwrapEC<BIO *>(bio);
   uint8_t t = BIO_should_read(bio_);
+  return !!t; // normalize to {0, 1}, which is Lean 4 `Bool`
+}
+
+// @& BIO -> BaseIO Bool
+extern "C" uint8_t bio_should_io_special(b_lean_obj_arg bio) {
+  auto bio_ = unwrapEC<BIO *>(bio);
+  uint8_t t = BIO_should_io_special(bio_);
   return !!t; // normalize to {0, 1}, which is Lean 4 `Bool`
 }
 
