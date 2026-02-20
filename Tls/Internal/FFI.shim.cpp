@@ -609,6 +609,26 @@ extern "C" lean_obj_res ssl_ctx_load_verify_file(b_lean_obj_arg ctx, lean_obj_ar
   return lean_io_result_mk_ok(lean_box(0));
 }
 
+// @& SSLContext -> IO Unit
+extern "C" lean_obj_res ssl_ctx_set_default_verify_paths(b_lean_obj_arg ctx) {
+  SSL_CTX * ctx_ = unwrapEC<SSL_CTX *>(ctx);
+  ERR_clear_error();
+  if (!SSL_CTX_set_default_verify_paths(ctx_)) {
+    return lean_io_result_mk_error(error_to_io_user_error());
+  }
+  return lean_io_result_mk_ok(lean_box(0));
+}
+
+// @& SSLContext -> @& ByteArray -> IO Unit
+extern "C" lean_obj_res ssl_ctx_set_alpn_wire(b_lean_obj_arg ctx, b_lean_obj_arg wire) {
+  SSL_CTX * ctx_ = unwrapEC<SSL_CTX *>(ctx);
+  ERR_clear_error();
+  if (SSL_CTX_set_alpn_protos(ctx_, lean_sarray_cptr(wire), static_cast<unsigned int>(lean_sarray_size(wire))) != 0) {
+    return lean_io_result_mk_error(error_to_io_user_error());
+  }
+  return lean_io_result_mk_ok(lean_box(0));
+}
+
 // @& BIO -> IO Unit
 extern "C" lean_obj_res bio_handshake(b_lean_obj_arg bio) {
   BIO * bio_ = unwrapEC<BIO *>(bio);
@@ -624,6 +644,42 @@ extern "C" lean_obj_res bio_ssl_shutdown(b_lean_obj_arg bio) {
   BIO * bio_ = unwrapEC<BIO *>(bio);
   BIO_ssl_shutdown(bio_);
   return lean_box(0);
+}
+
+// @& BIO -> String -> IO Unit
+extern "C" lean_obj_res bio_set_sni(b_lean_obj_arg bio, b_lean_obj_arg server_name) {
+  BIO * bio_ = unwrapEC<BIO *>(bio);
+  SSL * ssl = nullptr;
+  BIO_get_ssl(bio_, &ssl);
+  if (ssl == nullptr) {
+    return lean_io_result_mk_error(lean_mk_io_user_error(lean_mk_string("bio_set_sni: no SSL object found in BIO chain")));
+  }
+  ERR_clear_error();
+  if (SSL_set_tlsext_host_name(ssl, lean_string_cstr(server_name)) != 1) {
+    return lean_io_result_mk_error(error_to_io_user_error());
+  }
+  return lean_io_result_mk_ok(lean_box(0));
+}
+
+// @& BIO -> BaseIO (Option ByteArray)
+extern "C" lean_obj_res bio_get_alpn_selected(b_lean_obj_arg bio) {
+  BIO * bio_ = unwrapEC<BIO *>(bio);
+  SSL * ssl = nullptr;
+  BIO_get_ssl(bio_, &ssl);
+  if (ssl == nullptr) {
+    return lean_box(0); // Option.none
+  }
+  const unsigned char *data = nullptr;
+  unsigned int len = 0;
+  SSL_get0_alpn_selected(ssl, &data, &len);
+  if (len == 0 || data == nullptr) {
+    return lean_box(0); // Option.none
+  }
+  lean_obj_res ba = lean_alloc_sarray(1, len, len);
+  memcpy(lean_sarray_cptr(ba), data, len);
+  lean_obj_res some = lean_alloc_ctor(1, 1, 0);
+  lean_ctor_set(some, 0, ba);
+  return some;
 }
 
 // Async T = BaseIO (Std.Internal.IO.Async.MaybeTask (Except IO.Error T))

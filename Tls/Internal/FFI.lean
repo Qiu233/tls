@@ -82,16 +82,28 @@ opaque BIO.getAllError : BaseIO IO.Error
 @[extern "ssl_ctx_load_verify_file"]
 opaque SSLContext.load_verify_file : @& SSLContext -> String -> IO Unit
 
+@[extern "ssl_ctx_set_default_verify_paths"]
+opaque SSLContext.set_default_verify_paths : @& SSLContext -> IO Unit
+
+@[extern "ssl_ctx_set_alpn_wire"]
+opaque SSLContext.set_alpn_wire : @& SSLContext -> @& ByteArray -> IO Unit
+
 @[extern "bio_handshake"]
 opaque BIO.handshake : @& BIO -> IO Unit
 
 @[extern "bio_ssl_shutdown"]
 opaque BIO.ssl_shutdown : @& BIO -> BaseIO Unit
 
+@[extern "bio_set_sni"]
+opaque BIO.set_sni : @& BIO -> String -> IO Unit
+
+@[extern "bio_get_alpn_selected"]
+opaque BIO.get_alpn_selected : @& BIO -> BaseIO (Option ByteArray)
+
 section
 
 @[match_pattern, expose]
-def ERR_RETRY (s : String) : IO.Error := IO.Error.resourceExhausted none 11 s
+def ERR_RETRY (s : String) : IO.Error := IO.Error.resourceExhausted none 11 s -- 11 is EAGAIN
 
 @[match_pattern, expose]
 def ERR_RETRY_WRITE : IO.Error := ERR_RETRY "SHOULD_WRITE"
@@ -106,11 +118,33 @@ end
 
 section
 
+def encodeALPNWire (protocols : Array String) : IO ByteArray := do
+  protocols.foldlM (init := ByteArray.empty) fun acc proto => do
+    let bs := proto.toUTF8
+    if bs.size > 255 then
+      throw <| IO.userError s!"ALPN protocol is too long ({bs.size} bytes): {proto}"
+    else
+      let len : UInt8 := UInt8.ofNat bs.size
+      return acc.push len ++ bs
+
+def SSLContext.set_alpn_protocols (ctx : SSLContext) (protocols : Array String) : IO Unit := do
+  let wire ← encodeALPNWire protocols
+  ctx.set_alpn_wire wire
+
+def BIO.negotiatedALPN? (bio : BIO) : BaseIO (Option String) := do
+  match (← bio.get_alpn_selected) with
+  | none => return none
+  | some bs => return String.fromUTF8? bs
+
+end
+
+section
+
 partial def BIO.writeAsync (bio : BIO) (data : ByteArray) : Async Unit := do
   try
     bio.write data
   catch
-  | ERR_RETRY_WRITE => -- EAGAIN
+  | ERR_RETRY_WRITE =>
     sleep 1
     BIO.writeAsync bio data
   | err => throw err
@@ -119,17 +153,17 @@ partial def BIO.readAsync? (bio : BIO) (max : USize) : Async (Option ByteArray) 
   try
     some <$> bio.read max
   catch
-  | ERR_RETRY_READ => -- EAGAIN
+  | ERR_RETRY_READ =>
     sleep 1
     BIO.readAsync? bio max
   | err@(ERR_RETRY _) => throw err
-  | _ => return none -- closed
+  | _ => return none
 
 partial def BIO.handshakeAsync (bio : BIO) : Async Unit := do
   try
     bio.handshake
   catch
-  | ERR_RETRY _ => -- EAGAIN
+  | ERR_RETRY _ =>
     sleep 1
     BIO.handshakeAsync bio
   | err => throw err
