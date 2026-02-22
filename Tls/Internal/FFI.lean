@@ -1,6 +1,6 @@
 module
 
-meta import Tls.Meta.FFIType
+meta import Tls.Internal.Meta.FFIType
 public import Std
 
 public section
