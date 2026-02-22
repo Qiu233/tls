@@ -12,6 +12,7 @@ open System
 public section
 
 def Http.Transport.tls
+  (protocol : IO.Ref Protocol)
   (requireALPN? : Option String)
   (alpnProtocols : Array String)
   (serverName? : Option String := none)
@@ -53,8 +54,18 @@ def Http.Transport.tls
     sock.connect addr
     try
       tls.handshakeAsync
+      let selected? ← tls.negotiatedALPN?
+      if let some selected := selected? then
+        match selected with
+        | "http/1.1" => protocol.set .http1_1
+        | "h2" => protocol.set .http2
+        | _ =>
+          protocol.set (.unrecognized selected)
+          throw <| IO.userError s!"TLS ALPN mismatch: negotiated {selected} is unrecognized"
+      else
+        protocol.set .unknown -- TODO: probe for protocol?
+        throw <| IO.userError s!"TLS ALPN failed: no negotiated protocol"
       if let some expected := requireALPN? then
-        let selected? ← tls.negotiatedALPN?
         if selected? != some expected then
           throw <| IO.userError s!"TLS ALPN mismatch: expected {expected}, negotiated {selected?.getD "<none>"}"
       return conn
@@ -67,19 +78,22 @@ def Http.Transport.tls
 * If `caCertFile?` is `none`, the default path/files are used.
 * If `serverName?` is `none`, SNI is disabled.
 * If `verify_peer` is `false`, verify is disabled.
+* Prefer specifying `protocol`.
 -/
 def Http.HttpClient.mkTLS
   (host : String)
   (port : UInt16 := 443)
-  (protocol : Http.Connection.Protocol := .http2)
+  (protocol : Http.Protocol := .unknown)
   (caCertFile? : Option String := none)
   (serverName? : Option String := some host)
   (verify_peer : Bool := true)
-    : Http.HttpClient :=
+    : BaseIO Http.HttpClient := do
   let (alpnProtocols, requireALPN?) :=
     match protocol with
     | .http1_1 => (#["http/1.1"], some "http/1.1")
     | .http2   => (#["h2", "http/1.1"], some "h2")
     | .unknown => (#["http/1.1"], none)
-  let transport := Transport.tls requireALPN? alpnProtocols serverName? caCertFile? verify_peer
-  { host, port, protocol, transport }
+    | .unrecognized x => (#[x], some x)
+  let protocol ← IO.mkRef protocol
+  let transport := Transport.tls protocol requireALPN? alpnProtocols serverName? caCertFile? verify_peer
+  return { host, port, protocol, transport }

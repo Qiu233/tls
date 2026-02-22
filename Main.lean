@@ -21,6 +21,6 @@ instance : Repr (ByteArray) where
 deriving instance Repr for Response
 
 def main : IO Unit := do
-  let client : Http.HttpClient := .mkTLS "localhost" (port := 8443) (verify_peer := false)
+  let client : HttpClient ← HttpClient.mkTLS "baidu.com" (port := 443) (verify_peer := true) (protocol := .unknown)
   let resp ← client.getAsync "/" |>.wait
   println! "!{repr resp}"
