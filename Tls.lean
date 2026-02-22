@@ -16,6 +16,7 @@ def Http.Transport.tls
   (alpnProtocols : Array String)
   (serverName? : Option String := none)
   (caCertFile? : Option String := none)
+  (verify_peer : Bool := true)
     : Transport where
   connect := fun addr => do
     let sock ← Socket.Client.mk
@@ -29,14 +30,15 @@ def Http.Transport.tls
     let outBIO ← BIO.ofStream stream
     let meth ← SSLMethod.TLS
     let ctx ← SSLContext.new meth
+    if verify_peer then
+      ctx.set_verify SSL_VERIFY_PEER
     match caCertFile? with
     | some path => ctx.load_verify_file path
     | none => ctx.set_default_verify_paths
     ctx.set_alpn_protocols alpnProtocols
     let tls ← BIO.mkSSL ctx 1
-    match serverName? with
-    | some serverName => tls.set_sni serverName
-    | none => pure ()
+    if let some serverName := serverName? then
+      tls.set_sni serverName
     let tls ← tls.push outBIO
     let conn : Transport.Connection :=
       { send := fun bytes => do
@@ -51,30 +53,33 @@ def Http.Transport.tls
     sock.connect addr
     try
       tls.handshakeAsync
-      match requireALPN? with
-      | none => pure ()
-      | some expected =>
-          let selected? ← tls.negotiatedALPN?
-          if selected? != some expected then
-            throw <| IO.userError s!"TLS ALPN mismatch: expected {expected}, negotiated {selected?.getD "<none>"}"
+      if let some expected := requireALPN? then
+        let selected? ← tls.negotiatedALPN?
+        if selected? != some expected then
+          throw <| IO.userError s!"TLS ALPN mismatch: expected {expected}, negotiated {selected?.getD "<none>"}"
       return conn
     catch e =>
       sock.shutdown
       throw e
 
 /--
-HTTPS client.
+## HTTPS client
+* If `caCertFile?` is `none`, the default path/files are used.
+* If `serverName?` is `none`, SNI is disabled.
+* If `verify_peer` is `false`, verify is disabled.
 -/
 def Http.HttpClient.mkTLS
-    (host : String)
-    (port : UInt16 := 443)
-    (protocol : Http.Connection.Protocol := .http2)
-    (caCertFile? : Option String := none)
-    (serverName? : Option String := some host) : Http.HttpClient :=
+  (host : String)
+  (port : UInt16 := 443)
+  (protocol : Http.Connection.Protocol := .http2)
+  (caCertFile? : Option String := none)
+  (serverName? : Option String := some host)
+  (verify_peer : Bool := true)
+    : Http.HttpClient :=
   let (alpnProtocols, requireALPN?) :=
     match protocol with
     | .http1_1 => (#["http/1.1"], some "http/1.1")
     | .http2   => (#["h2", "http/1.1"], some "h2")
     | .unknown => (#["http/1.1"], none)
-  let transport := Transport.tls requireALPN? alpnProtocols serverName? caCertFile?
+  let transport := Transport.tls requireALPN? alpnProtocols serverName? caCertFile? verify_peer
   { host, port, protocol, transport }

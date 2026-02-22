@@ -100,6 +100,15 @@ opaque BIO.set_sni : @& BIO -> String -> IO Unit
 @[extern "bio_get_alpn_selected"]
 opaque BIO.get_alpn_selected : @& BIO -> BaseIO (Option ByteArray)
 
+def SSL_VERIFY_NONE                 : Int32 := 0x00
+def SSL_VERIFY_PEER                 : Int32 := 0x01
+def SSL_VERIFY_FAIL_IF_NO_PEER_CERT : Int32 := 0x02
+def SSL_VERIFY_CLIENT_ONCE          : Int32 := 0x04
+def SSL_VERIFY_POST_HANDSHAKE       : Int32 := 0x08
+
+@[extern "ssl_ctx_set_verify"]
+opaque SSLContext.set_verify : @& SSLContext -> Int32 -> BaseIO Unit
+
 section
 
 @[match_pattern, expose]

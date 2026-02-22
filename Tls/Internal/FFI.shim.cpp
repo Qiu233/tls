@@ -629,6 +629,13 @@ extern "C" lean_obj_res ssl_ctx_set_alpn_wire(b_lean_obj_arg ctx, b_lean_obj_arg
   return lean_io_result_mk_ok(lean_box(0));
 }
 
+// @& SSLContext -> Int32 -> BaseIO Unit
+extern "C" lean_obj_res ssl_ctx_set_verify(b_lean_obj_arg ctx, int32_t mode) {
+  SSL_CTX *ctx_ = unwrapEC<SSL_CTX *>(ctx);
+  SSL_CTX_set_verify(ctx_, SSL_VERIFY_PEER, nullptr);
+  return lean_box(0);
+}
+
 // @& BIO -> IO Unit
 extern "C" lean_obj_res bio_handshake(b_lean_obj_arg bio) {
   BIO * bio_ = unwrapEC<BIO *>(bio);
