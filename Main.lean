@@ -21,12 +21,6 @@ instance : Repr (ByteArray) where
 deriving instance Repr for Response
 
 def main : IO Unit := do
-  let tlsCfg : TLSClientConfig :=
-    { serverName? := some "localhost"
-      caCertFile? := some "/home/qiu/dummyweb/.nginx/ssl/self.crt"
-      alpnProtocols := #["h2", "http/1.1"]
-      requireALPN? := some "h2" }
-  let client : Http.HttpClient :=
-    { host := "127.0.0.1", port := 8443, transport := tls_transport tlsCfg, protocol := .http2 }
+  let client : Http.HttpClient := .mkTLS "localhost" (port := 8443)
   let resp ← client.getAsync "/" |>.wait
   println! "!{repr resp}"

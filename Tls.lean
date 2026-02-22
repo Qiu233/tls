@@ -11,14 +11,12 @@ open System
 
 public section
 
-structure TLSClientConfig where
-  serverName? : Option String := none
-  caCertFile? : Option String := none
-  alpnProtocols : Array String := #["h2", "http/1.1"]
-  requireALPN? : Option String := some "h2"
-  deriving Inhabited
-
-def tls_transport (cfg : TLSClientConfig) : Transport where
+def Http.Transport.tls
+  (requireALPN? : Option String)
+  (alpnProtocols : Array String)
+  (serverName? : Option String := none)
+  (caCertFile? : Option String := none)
+    : Transport where
   connect := fun addr => do
     let sock ← Socket.Client.mk
     let send (bs : ByteArray) : Async Unit := do
@@ -31,12 +29,12 @@ def tls_transport (cfg : TLSClientConfig) : Transport where
     let outBIO ← BIO.ofStream stream
     let meth ← SSLMethod.TLS
     let ctx ← SSLContext.new meth
-    match cfg.caCertFile? with
+    match caCertFile? with
     | some path => ctx.load_verify_file path
     | none => ctx.set_default_verify_paths
-    ctx.set_alpn_protocols cfg.alpnProtocols
+    ctx.set_alpn_protocols alpnProtocols
     let tls ← BIO.mkSSL ctx 1
-    match cfg.serverName? with
+    match serverName? with
     | some serverName => tls.set_sni serverName
     | none => pure ()
     let tls ← tls.push outBIO
@@ -53,7 +51,7 @@ def tls_transport (cfg : TLSClientConfig) : Transport where
     sock.connect addr
     try
       tls.handshakeAsync
-      match cfg.requireALPN? with
+      match requireALPN? with
       | none => pure ()
       | some expected =>
           let selected? ← tls.negotiatedALPN?
@@ -63,3 +61,20 @@ def tls_transport (cfg : TLSClientConfig) : Transport where
     catch e =>
       sock.shutdown
       throw e
+
+/--
+HTTPS client.
+-/
+def Http.HttpClient.mkTLS
+    (host : String)
+    (port : UInt16 := 443)
+    (protocol : Http.Connection.Protocol := .http2)
+    (caCertFile? : Option String := none)
+    (serverName? : Option String := some host) : Http.HttpClient :=
+  let (alpnProtocols, requireALPN?) :=
+    match protocol with
+    | .http1_1 => (#["http/1.1"], some "http/1.1")
+    | .http2   => (#["h2", "http/1.1"], some "h2")
+    | .unknown => (#["http/1.1"], none)
+  let transport := Transport.tls requireALPN? alpnProtocols serverName? caCertFile?
+  { host, port, protocol, transport }
